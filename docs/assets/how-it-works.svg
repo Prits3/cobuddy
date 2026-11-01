@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 250" width="1200" height="250" role="img" aria-label="How CoBuddy works in four steps: connect an agent, give CoBuddy a goal, watch the live graph, and step in when needed.">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; fill: #2fe6ff; letter-spacing: 1px; }
+    .title { font-size: 24px; font-weight: 700; fill: #f0f4fa; }
+    .body { font-size: 16px; fill: #a9b8c8; }
+    .card { fill: #111a25; stroke: #2a3a4d; }
+    .link { fill: none; stroke: #2fe6ff; stroke-width: 2.5; stroke-dasharray: 7 6; }
+    .head { fill: #2fe6ff; }
+  </style>
+  <rect width="1200" height="250" fill="#0a0e13"/>
+
+  <g transform="translate(24 38)">
+    <rect class="card" width="252" height="174"/><rect width="252" height="4" fill="#2fe6ff"/>
+    <text class="num" x="20" y="38">01</text>
+    <text class="title" x="20" y="76">Connect</text>
+    <text class="body" x="20" y="110">Allow an agent into one</text>
+    <text class="body" x="20" y="134">folder. It counts only once</text>
+    <text class="body" x="20" y="158">a real reply comes back</text>
+  </g>
+  <path class="link" d="M 276 125 H 310"/><path class="head" d="M 310 117 L 322 125 L 310 133 Z"/>
+
+  <g transform="translate(322 38)">
+    <rect class="card" width="252" height="174"/><rect width="252" height="4" fill="#2fe6ff"/>
+    <text class="num" x="20" y="38">02</text>
+    <text class="title" x="20" y="76">Set the goal</text>
+    <text class="body" x="20" y="110">An agent plans the work</text>
+    <text class="body" x="20" y="134">and CoBuddy builds</text>
+    <text class="body" x="20" y="158">the graph</text>
+  </g>
+  <path class="link" d="M 574 125 H 608"/><path class="head" d="M 608 117 L 620 125 L 608 133 Z"/>
+
+  <g transform="translate(620 38)">
+    <rect class="card" width="252" height="174"/><rect width="252" height="4" fill="#2fe6ff"/>
+    <text class="num" x="20" y="38">03</text>
+    <text class="title" x="20" y="76">Watch</text>
+    <text class="body" x="20" y="110">Agents take tasks, CoBuddy</text>
+    <text class="body" x="20" y="134">routes handoffs, real events</text>
+    <text class="body" x="20" y="158">update the graph</text>
+  </g>
+  <path class="link" d="M 872 125 H 906"/><path class="head" d="M 906 117 L 918 125 L 906 133 Z"/>
+
+  <g transform="translate(918 38)">
+    <rect class="card" width="258" height="174" style="stroke:#ffb224"/><rect width="258" height="4" fill="#ffb224"/>
+    <text class="num" x="20" y="38" style="fill:#ffb224">04</text>
+    <text class="title" x="20" y="76">Step in</text>
+    <text class="body" x="20" y="110">Pause, stop, redirect,</text>
+    <text class="body" x="20" y="134">or settle a conflict</text>
+    <text class="body" x="20" y="158">when you need to</text>
+  </g>
+</svg>
