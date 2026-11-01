@@ -264,13 +264,3 @@ Contribution guidelines haven't been written yet. Until then, please open an iss
 ## 📄 License
 
 No license has been chosen yet.
-
----
-
-<div align="center">
-
-<img src="public/brand/logo.png" alt="The CoBuddy marshmallow duo" width="180">
-
-**Built by Prits**
-
-</div>
