@@ -141,6 +141,6 @@ export const claudeCode: AgentAdapter = {
     child.on('error', (error) => exit(error.message));
     child.on('close', (code) => exit(errors.trim() || `exit code ${code}`));
 
-    return { stop: () => void child.kill('SIGTERM') };
+    return { stop: () => void child.kill('SIGTERM'), pid: child.pid };
   },
 };

@@ -50,7 +50,9 @@ function ConnectForm({ project, tool, limits, live }: { project: Project; tool: 
   const connection = project.connections?.[tool];
   const label = TOOL_LABEL[tool];
 
-  useEffect(() => setTesting(false), [connection?.live, connection?.note, live.error]);
+  const lastSeq = project.activity?.at(-1)?.seq;
+  // Any new event ends the wait, including the same failure arriving twice.
+  useEffect(() => setTesting(false), [connection?.live, connection?.note, live.error, lastSeq]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();

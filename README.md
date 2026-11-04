@@ -113,6 +113,7 @@ Click a task to see its owner, dependencies, changed files, closing summary and 
 | **Start agents** | Approves the plan and starts the work |
 | **Pause / Resume** | Stops new work from starting. Agents already working finish their task |
 | **Stop** | Ends one agent, or all of them, straight away |
+| **Cancel planning** | Stops the planning agent and returns to the goal box, with your goal kept |
 | **Redirect** | Stops a task and restarts it with your new instruction |
 | **Try again** | Restarts a blocked task, with extra instructions if you want |
 | **Do this first / It's safe** | Settles an overlap between two tasks |
@@ -188,7 +189,9 @@ Project data is saved in your browser. Agent events are saved in `.cobuddy/`, wh
 
 **Good to know**
 
-- Keep the CoBuddy tab open during a run. The page hands out the next task, so closing it stops new work, though running agents finish. Reopen it and it catches up.
+- Keep the CoBuddy tab open during a run, and use one tab per project. The page hands out the next task, so closing it stops new work, though running agents finish. Reopen it and it catches up. Two tabs on the same project can each hand out work, which can run more agents than you allowed.
+- Stopping CoBuddy with Ctrl+C, or closing its terminal, stops its agents first. If it's killed outright, an agent can keep running until the next time CoBuddy starts, when it finds and stops it.
+- A connection test gives up after 60 seconds and a plan after 10 minutes.
 - Agents edit your folder directly, with no branches and no automatic undo. Use version control.
 - "Finished" means the agent reported finishing. CoBuddy doesn't check its work, and agents can't run tests.
 
@@ -196,19 +199,29 @@ Project data is saved in your browser. Agent events are saved in `.cobuddy/`, wh
 <summary><b>How this was tested</b></summary>
 <br>
 
-These were run through the real app with real Claude Code agents, using the default model unless noted.
+Every row below was run through the real app with real Claude Code agents, on macOS. Rows marked *(Haiku)* used the cheaper model to save cost, and the rest used the default Sonnet.
 
 | Check | Result |
 |---|---|
-| Connection test | Showed Connected only after Claude Code replied |
+| Connection test | Showed Connected only after Claude Code replied. Not connected for a missing folder, a file, the home folder, a folder containing it, or `/` |
+| Signed out of Claude Code | Stayed on Needs permission with the sign-in message, and could be retried repeatedly |
 | Ongoing updates | Events kept arriving throughout each run, not just the test reply |
 | Limit of one agent | Never more than one working, measured during the run |
 | Redirect mid-task | The agent stopped, and the file reflected the new instruction |
+| "Do this first" on a working agent | It stopped, waited behind the other task, and both finished with the file in the new order *(Haiku)* |
+| Stop all, stop one, delete a running task | The agents ended each time, with no agent processes left *(Haiku)* |
+| Cancel planning | Planning stopped, the goal was kept, and planning again worked *(Haiku)* |
+| Plan that fails | The goal screen showed why, in place *(Haiku)* |
 | Read outside the folder | Refused, the task was blocked, and the content never appeared |
-| Hostile hook inside the project folder | Didn't run (Haiku) |
-| Signed out of Claude Code | Stayed on Needs permission with the sign-in message |
-| Spending limit of $0.01 per task | Stopped the task after 1 of 8 files, at $0.018 (Haiku) |
-| Server killed during a run | Showed Connection lost and a blocked task, not a finish (Haiku) |
+| Hostile hook inside the project folder | Didn't run *(Haiku)* |
+| Spending limit of $0.01 per task | Stopped the task after 1 of 8 files, at $0.018 *(Haiku)* |
+| Reload the page mid-run or mid-plan | Picked up where it left off, with each task started once *(Haiku)* |
+| Close the tab mid-run, reopen later | The running agent finished, no new task started while closed, and the run completed once reopened *(Haiku)* |
+| Server killed mid-run | The page showed lost contact. After a restart it showed Connection lost and a blocked task, the leftover agent was stopped, and Reconnect plus Try again finished the run *(Haiku)* |
+| Ctrl+C and terminate | The running agent was stopped each time *(Haiku)* |
+| Requests from other websites | Refused, including a foreign Host, a foreign Origin, and a form post |
+
+**Not covered:** tools other than Claude Code, anything other than macOS, two tabs on one project, and runs longer than a few minutes.
 
 </details>
 
@@ -218,7 +231,7 @@ These were run through the real app with real Claude Code agents, using the defa
 <summary><b>What agents can do</b></summary>
 <br>
 
-- Agents work in the one folder you choose. CoBuddy refuses your home folder or your whole computer.
+- Agents work in the one folder you choose. CoBuddy refuses your home folder, your whole computer, and any folder that contains your home folder.
 - They can read, search and edit there. They can't run commands, because no shell is given to them.
 - They load no Claude Code settings, neither yours nor any stored in the folder, so a downloaded project can't widen its own access or run its own hooks.
 - Runs use the Claude account you're signed in to in Claude Code. CoBuddy never sees your sign-in.

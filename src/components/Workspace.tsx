@@ -180,7 +180,7 @@ export function Workspace({ project, onChange, onExit }: Props) {
         </div>
       )}
 
-      {!project.isSample && project.tasks.length > 0 && (
+      {!project.isSample && project.tasks.length > 0 && (Object.keys(project.connections ?? {}).length > 0 || project.runState) && (
         <RunBar
           project={project}
           live={live}
@@ -218,37 +218,39 @@ export function Workspace({ project, onChange, onExit }: Props) {
               onPlan={(goal) => void live.plan(goal)}
               onConnect={() => setModal({ kind: 'agents' })}
               onManual={() => setModal({ kind: 'task', task: null })}
+              onCancel={() => void live.cancelPlan()}
             />
           )}
 
-          {overlaps.length > 0 && (
-            <div className="overlap-bar">
-              <button type="button" className={`overlap-alert ${liveCount ? 'live' : openOverlaps.length ? 'possible' : 'clear'}`} onClick={showNextOverlap} disabled={!openOverlaps.length}>
-                <WarningIcon />
-                {openOverlaps.length
-                  ? `${openOverlaps.length} ${openOverlaps.length === 1 ? 'overlap needs' : 'overlaps need'} a decision${liveCount ? ` · ${liveCount} live` : ''}`
-                  : 'All overlaps reviewed'}
+          <div className="graph-tools">
+            {overlaps.length > 0 && (
+              <div className="overlap-bar">
+                <button type="button" className={`overlap-alert ${liveCount ? 'live' : openOverlaps.length ? 'possible' : 'clear'}`} onClick={showNextOverlap} disabled={!openOverlaps.length}>
+                  <WarningIcon />
+                  {openOverlaps.length
+                    ? `${openOverlaps.length} ${openOverlaps.length === 1 ? 'overlap needs' : 'overlaps need'} a decision${liveCount ? ` · ${liveCount} live` : ''}`
+                    : 'All overlaps reviewed'}
+                </button>
+                {openOverlaps.length > 0 && (
+                  <button type="button" className={`mini-toggle ${overlapsOnly ? 'on' : ''}`} aria-pressed={overlapsOnly} onClick={() => setOverlapsOnly(!overlapsOnly)}>Only these</button>
+                )}
+              </div>
+            )}
+            {filtering && (
+              <button
+                type="button"
+                className="clear-filters"
+                onClick={() => {
+                  setStatusFilter(null);
+                  setOwnerFilter(null);
+                  setOverlapsOnly(false);
+                  setQuery('');
+                }}
+              >
+                Clear filters
               </button>
-              {openOverlaps.length > 0 && (
-                <button type="button" className={`mini-toggle ${overlapsOnly ? 'on' : ''}`} aria-pressed={overlapsOnly} onClick={() => setOverlapsOnly(!overlapsOnly)}>Only these</button>
-              )}
-            </div>
-          )}
-
-          {filtering && (
-            <button
-              type="button"
-              className="clear-filters"
-              onClick={() => {
-                setStatusFilter(null);
-                setOwnerFilter(null);
-                setOverlapsOnly(false);
-                setQuery('');
-              }}
-            >
-              Clear filters
-            </button>
-          )}
+            )}
+          </div>
         </main>
 
         {selected && (
@@ -294,6 +296,7 @@ export function Workspace({ project, onChange, onExit }: Props) {
             }}
             onConnect={() => setModal({ kind: 'agents' })}
             onManual={() => setModal({ kind: 'task', task: null })}
+            onCancel={() => void live.cancelPlan()}
           />
         </Dialog>
       )}

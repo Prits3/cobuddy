@@ -33,11 +33,12 @@ export function resolveFolder(input: unknown, home = homedir()): string {
   let folder: string;
   try {
     folder = realpathSync(typed);
-    if (!statSync(folder).isDirectory()) throw new Error();
   } catch {
     throw new Error('That folder doesn’t exist.');
   }
-  if (folder === dirname(folder) || folder === realpathSync(home)) {
+  if (!statSync(folder).isDirectory()) throw new Error('That path is a file, not a folder.');
+  const realHome = realpathSync(home);
+  if (folder === dirname(folder) || folder === realHome || realHome.startsWith(`${folder}/`)) {
     throw new Error('Choose a project folder, not your whole home folder or computer.');
   }
   return folder;
@@ -101,6 +102,8 @@ async function handlePost(hub: Hub, path: string, body: Record<string, any>): Pr
     case '/api/plan':
       hub.plan(id, tool, resolveFolder(body.folder), String(body.goal ?? '').slice(0, 4000));
       return {};
+    case '/api/plan/stop':
+      return { stopped: hub.cancelPlan(id) };
     case '/api/tasks/start':
       hub.startTask(id, { ...body, tool, folder: resolveFolder(body.folder) } as Parameters<Hub['startTask']>[1]);
       return {};

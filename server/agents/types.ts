@@ -21,6 +21,8 @@ export interface RunRequest {
 
 export interface RunHandle {
   stop: () => void;
+  /** The tool's process id, so a later start of CoBuddy can find an agent a hard kill left behind. */
+  pid?: number;
 }
 
 export interface RunCallbacks {

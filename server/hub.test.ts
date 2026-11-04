@@ -1,7 +1,8 @@
-import { mkdtempSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '../src/domain/events.ts';
 import { adapters } from './agents/index.ts';
 import type { RunCallbacks } from './agents/types.ts';
@@ -79,6 +80,41 @@ describe('connecting', () => {
   });
 });
 
+describe('time limits and cancelling', () => {
+  it('fails a connection test that never answers', () => {
+    vi.useFakeTimers();
+    const hub = new Hub(dir);
+    const events = watch(hub);
+    hub.connect('p', 'claude-code', '/work', 1);
+    vi.advanceTimersByTime(61_000);
+    expect(kinds(events)).toEqual(['connection-failed']);
+    expect(stopped).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('cancels a plan on request and says so', () => {
+    const hub = new Hub(dir);
+    const events = watch(hub);
+    hub.plan('p', 'claude-code', '/work', 'goal');
+    expect(hub.cancelPlan('p')).toBe(true);
+    expect(stopped).toBe(true);
+    latest.onExit('exit code 143');
+    expect(kinds(events)).toEqual(['plan-started', 'plan-failed']);
+    expect(events[1].text).toBe('Planning was cancelled.');
+    expect(hub.cancelPlan('p')).toBe(false);
+  });
+
+  it('gives up on a plan that never finishes', () => {
+    vi.useFakeTimers();
+    const hub = new Hub(dir);
+    const events = watch(hub);
+    hub.plan('p', 'claude-code', '/work', 'goal');
+    vi.advanceTimersByTime(11 * 60_000);
+    expect(kinds(events)).toEqual(['plan-started', 'plan-failed']);
+    vi.useRealTimers();
+  });
+});
+
 describe('planning', () => {
   it('adds nothing when the plan isn’t usable', () => {
     const hub = new Hub(dir);
@@ -141,6 +177,50 @@ describe('running a task', () => {
     latest.onReport({ kind: 'finished', text: 'Done' });
     latest.onExit('exit code 0');
     expect(kinds(events)).toEqual(['run-finished']);
+  });
+});
+
+describe('agents left behind by a hard kill', () => {
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  function leftover(name: string, parent: number) {
+    const bin = join(dir, name);
+    symlinkSync('/bin/sleep', bin);
+    const child = spawn(bin, ['60'], { stdio: 'ignore' });
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'agents.pids.json'), JSON.stringify([{ pid: child.pid, parent }]));
+    return child;
+  }
+
+  it('stops an agent whose CoBuddy has died', async () => {
+    const child = leftover('claude', 2147483646);
+    new Hub(dir);
+    await wait(400);
+    expect(alive(child.pid!)).toBe(false);
+  });
+
+  it('leaves alone a process that isn’t an agent, even with a dead parent', async () => {
+    const child = leftover('something-else', 2147483646);
+    new Hub(dir);
+    await wait(400);
+    expect(alive(child.pid!)).toBe(true);
+    child.kill();
+  });
+
+  it('leaves alone an agent whose CoBuddy is still running', async () => {
+    const child = leftover('claude', process.ppid);
+    new Hub(dir);
+    await wait(400);
+    expect(alive(child.pid!)).toBe(true);
+    child.kill();
   });
 });
 

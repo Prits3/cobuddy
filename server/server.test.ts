@@ -1,6 +1,6 @@
-import { mkdtempSync, realpathSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { claudeArgs, parseClaudeLine } from './agents/claudeCode';
 import { isTrustedRequest, resolveFolder } from './api';
@@ -105,9 +105,20 @@ describe('choosing a folder', () => {
     expect(() => resolveFolder('/')).toThrow();
   });
 
+  it('refuses a folder that contains your home folder', () => {
+    expect(() => resolveFolder(dirname(realpathSync(homedir())))).toThrow(/home folder/);
+  });
+
   it('refuses relative and missing folders', () => {
     expect(() => resolveFolder('src')).toThrow();
-    expect(() => resolveFolder('/no/such/folder')).toThrow();
+    expect(() => resolveFolder('/no/such/folder')).toThrow(/doesn’t exist/);
+  });
+
+  it('says so when the path is a file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cobuddy-file-'));
+    const file = join(dir, 'note.txt');
+    writeFileSync(file, 'x');
+    expect(() => resolveFolder(file)).toThrow(/file, not a folder/);
   });
 
   it('accepts a real folder', () => {

@@ -1,10 +1,11 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Handoff } from '../src/domain/coordinator.ts';
 import type { AgentEvent } from '../src/domain/events.ts';
 import type { ToolId } from '../src/domain/types.ts';
 import { adapters } from './agents/index.ts';
-import type { AgentAdapter, AgentReport, RunHandle } from './agents/types.ts';
+import type { AgentAdapter, AgentReport, RunCallbacks, RunHandle } from './agents/types.ts';
 import { PING_PROMPT, PLAN_SCHEMA, planPrompt, taskPrompt, validatePlan, type TaskBrief } from './prompts.ts';
 
 type NewEvent = Omit<AgentEvent, 'seq' | 'at' | 'projectId' | 'tool'> & { tool?: ToolId };
@@ -17,16 +18,110 @@ interface ProjectLog {
 }
 
 const IDLE_LIMIT_MS = 15 * 60 * 1000;
+const CONNECT_LIMIT_MS = 60 * 1000;
+const PLAN_LIMIT_MS = 10 * 60 * 1000;
 const RUN_ENDS = new Set(['run-finished', 'run-blocked', 'run-failed', 'run-stopped', 'connection-lost']);
+
+const hubs = new Set<Hub>();
+let exitHooked = false;
+
+/**
+ * Ctrl+C, a terminate signal, a closed terminal and a normal exit all stop the
+ * agents too, so none outlives CoBuddy. A signal ends the process without an
+ * exit event, so each one is handled here.
+ */
+function stopAgentsOnExit() {
+  if (exitHooked) return;
+  exitHooked = true;
+  const stopAll = () => hubs.forEach((hub) => hub.shutdown());
+  process.on('exit', stopAll);
+  for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]] as const) {
+    process.once(signal, () => {
+      stopAll();
+      process.exit(code);
+    });
+  }
+}
+
+const isAlive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /** Keeps each project's real events on disk, and owns the agent processes that produce them. */
 export class Hub {
   private logs = new Map<string, ProjectLog>();
   private runs = new Map<string, RunHandle>();
   private stopping = new Set<string>();
-  private planning = new Set<string>();
+  private planning = new Map<string, { stop: () => void; cancelled: boolean }>();
 
-  constructor(private dir = join(process.cwd(), '.cobuddy', 'events')) {}
+  constructor(private dir = join(process.cwd(), '.cobuddy', 'events')) {
+    hubs.add(this);
+    stopAgentsOnExit();
+    this.reapOrphans();
+  }
+
+  private get pidFile() {
+    return join(this.dir, 'agents.pids.json');
+  }
+
+  private readPids(): { pid: number; parent: number }[] {
+    try {
+      return JSON.parse(readFileSync(this.pidFile, 'utf8'));
+    } catch {
+      return [];
+    }
+  }
+
+  private writePids(pids: { pid: number; parent: number }[]) {
+    mkdirSync(this.dir, { recursive: true });
+    writeFileSync(this.pidFile, JSON.stringify(pids));
+  }
+
+  /**
+   * A hard kill can't be intercepted, so it can leave an agent running with
+   * nothing watching it. Agents whose CoBuddy has died are stopped at the next
+   * start, after checking the process is still the agent and not a reused id.
+   */
+  private reapOrphans() {
+    const keep = this.readPids().filter(({ pid, parent }) => {
+      if (!isAlive(pid)) return false;
+      if (isAlive(parent) && parent !== process.pid) return true;
+      try {
+        const name = execFileSync('ps', ['-o', 'comm=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+        if (/(^|\/)claude$/.test(name)) process.kill(pid, 'SIGTERM');
+      } catch {
+        // The process ended while we were looking.
+      }
+      return false;
+    });
+    if (existsSync(this.pidFile)) this.writePids(keep);
+  }
+
+  private track(pid: number | undefined) {
+    if (pid) this.writePids([...this.readPids(), { pid, parent: process.pid }]);
+  }
+
+  private untrack(pid: number | undefined) {
+    if (pid) this.writePids(this.readPids().filter((item) => item.pid !== pid));
+  }
+
+  /** Starts an agent and records it, so it can be found again if CoBuddy is killed. */
+  private launch(adapter: AgentAdapter, request: Parameters<AgentAdapter['start']>[0], callbacks: RunCallbacks): RunHandle {
+    const handle: RunHandle = adapter.start(request, {
+      ...callbacks,
+      onExit: (detail) => {
+        this.untrack(handle.pid);
+        callbacks.onExit(detail);
+      },
+    });
+    this.track(handle.pid);
+    return handle;
+  }
 
   private file(projectId: string) {
     return join(this.dir, `${projectId}.jsonl`);
@@ -97,40 +192,50 @@ export class Hub {
     const adapter = this.adapter(tool);
     let heard = false;
     let closed = false;
+    let timer: NodeJS.Timeout | undefined;
     const fail = (text: string) => {
       if (closed) return;
       closed = true;
+      clearTimeout(timer);
       this.emit(projectId, tool, { kind: 'connection-failed', fromAgent: false, text });
     };
 
-    adapter.start({ mode: 'ping', folder, prompt: PING_PROMPT }, {
+    const handle = this.launch(adapter, { mode: 'ping', folder, prompt: PING_PROMPT }, {
       onReport: (report) => {
         if (report.kind === 'session') heard = true;
         if (report.kind === 'finished' && heard && !closed) {
           closed = true;
+          clearTimeout(timer);
           this.emit(projectId, tool, { kind: 'connected', fromAgent: true, workers, text: `${adapter.label} answered from this project’s folder.`, costUsd: report.costUsd });
         }
         if (report.kind === 'failed') fail(report.text);
       },
       onExit: (detail) => fail(`${adapter.label} didn’t answer: ${detail}`),
     });
+    timer = setTimeout(() => {
+      fail(`${adapter.label} didn’t reply within ${CONNECT_LIMIT_MS / 1000} seconds.`);
+      handle.stop();
+    }, CONNECT_LIMIT_MS);
   }
 
   plan(projectId: string, tool: ToolId, folder: string, goal: string) {
     const adapter = this.adapter(tool);
     if (this.planning.has(projectId)) return;
-    this.planning.add(projectId);
+    const plan = { stop: () => {}, cancelled: false };
+    this.planning.set(projectId, plan);
     this.emit(projectId, tool, { kind: 'plan-started', fromAgent: false, text: `Asked ${adapter.label} to plan the goal.` });
 
     let settled = false;
+    let timer: NodeJS.Timeout | undefined;
     const failed = (text: string, costUsd?: number) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       this.planning.delete(projectId);
-      this.emit(projectId, tool, { kind: 'plan-failed', fromAgent: false, text, costUsd });
+      this.emit(projectId, tool, { kind: 'plan-failed', fromAgent: false, text: plan.cancelled ? 'Planning was cancelled.' : text, costUsd });
     };
 
-    adapter.start({ mode: 'plan', folder, prompt: planPrompt(goal), schema: PLAN_SCHEMA }, {
+    const handle = this.launch(adapter, { mode: 'plan', folder, prompt: planPrompt(goal), schema: PLAN_SCHEMA }, {
       onReport: (report) => {
         if (report.kind === 'tool') this.emit(projectId, tool, { kind: 'tool', fromAgent: true, text: report.text });
         if (report.kind === 'failed') failed(report.text, report.costUsd);
@@ -138,12 +243,26 @@ export class Hub {
           const plan = validatePlan(report.output);
           if (!plan) return failed('The plan that came back wasn’t usable, so nothing was added.', report.costUsd);
           settled = true;
+          clearTimeout(timer);
           this.planning.delete(projectId);
           this.emit(projectId, tool, { kind: 'plan-ready', fromAgent: true, plan, costUsd: report.costUsd, text: `Plan ready with ${plan.length} ${plan.length === 1 ? 'task' : 'tasks'}.` });
         }
       },
       onExit: (detail) => failed(`Planning stopped: ${detail}`),
     });
+    plan.stop = handle.stop;
+    timer = setTimeout(() => {
+      failed(`Planning took longer than ${PLAN_LIMIT_MS / 60000} minutes, so CoBuddy stopped it.`);
+      handle.stop();
+    }, PLAN_LIMIT_MS);
+  }
+
+  cancelPlan(projectId: string) {
+    const plan = this.planning.get(projectId);
+    if (!plan) return false;
+    plan.cancelled = true;
+    plan.stop();
+    return true;
   }
 
   private key(projectId: string, taskId: string) {
@@ -199,7 +318,7 @@ export class Hub {
       send({ kind: 'handoff', fromAgent: false, text: `CoBuddy passed ${handoff.fromAgent}’s result from ${handoff.ref} to ${agentName}.` });
     }
 
-    const handle = adapter.start({ mode: 'task', folder, prompt: taskPrompt(brief) }, {
+    const handle = this.launch(adapter, { mode: 'task', folder, prompt: taskPrompt(brief) }, {
       onReport,
       onExit: (detail) => {
         const stopped = this.stopping.has(key);
@@ -223,5 +342,6 @@ export class Hub {
 
   shutdown() {
     this.runs.forEach((run) => run.stop());
+    this.planning.forEach((plan) => plan.stop());
   }
 }

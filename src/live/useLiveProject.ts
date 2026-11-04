@@ -69,11 +69,20 @@ export function useLiveProject(project: Project, onChange: (change: (project: Pr
       ),
     );
 
-  const plan = (goal: string) => {
+  const plan = async (goal: string) => {
     const tool = liveAgents(project)[0]?.tool;
-    onChange((current) => ({ ...current, goal }));
-    return attempt(post('/api/plan', { projectId: project.id, tool, folder: project.folder, goal }));
+    setError(null);
+    // Show that planning has begun straight away. If the bridge refuses, it goes back.
+    onChange((current) => ({ ...current, goal, runState: 'planning' }));
+    try {
+      await post('/api/plan', { projectId: project.id, tool, folder: project.folder, goal });
+    } catch (failure) {
+      setError((failure as Error).message);
+      onChange((current) => (current.runState === 'planning' ? { ...current, runState: 'idle' } : current));
+    }
   };
+
+  const cancelPlan = () => attempt(post('/api/plan/stop', { projectId: project.id }));
 
   const setRun = (runState: Project['runState']) => onChange((current) => ({ ...current, runState }));
   const stopRun = (taskId: string) => attempt(post('/api/tasks/stop', { projectId: project.id, taskId }));
@@ -96,7 +105,7 @@ export function useLiveProject(project: Project, onChange: (change: (project: Pr
     project.tasks.filter((task) => task.status === 'active').forEach((task) => void stopRun(task.id));
   };
 
-  return { bridge, error, connect, plan, setRun, stopRun, stopAll, redirect };
+  return { bridge, error, connect, plan, cancelPlan, setRun, stopRun, stopAll, redirect };
 }
 
 export type LiveProject = ReturnType<typeof useLiveProject>;

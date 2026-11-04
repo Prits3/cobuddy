@@ -32,9 +32,10 @@ function headline(project: Project, working: number): string {
 }
 
 export function RunBar({ project, live, activityOpen, onToggleActivity, onNewGoal, onConnect, onSelect }: Props) {
-  const working = project.tasks.filter((task) => task.status === 'active' && task.owner?.type === 'agent').length;
+  const agents = liveAgents(project);
+  const working = project.tasks.filter((task) => task.status === 'active' && agents.some((agent) => agent.id === task.owner?.id)).length;
   const waiting = needsPerson(project);
-  const connected = liveAgents(project).length > 0;
+  const connected = agents.length > 0;
   const cost = project.costUsd ?? 0;
   const now = useNow();
   const lastEventAt = Object.values(project.connections ?? {}).flatMap((item) => item.lastEventAt ?? []).sort().at(-1);

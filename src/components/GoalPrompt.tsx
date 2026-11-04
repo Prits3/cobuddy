@@ -8,9 +8,10 @@ interface Props {
   onPlan: (goal: string) => void;
   onConnect: () => void;
   onManual: () => void;
+  onCancel: () => void;
 }
 
-export function GoalPrompt({ project, error, onPlan, onConnect, onManual }: Props) {
+export function GoalPrompt({ project, error, onPlan, onConnect, onManual, onCancel }: Props) {
   const [goal, setGoal] = useState(project.goal ?? '');
   const agents = liveAgents(project);
   const latest = project.activity?.at(-1);
@@ -27,6 +28,7 @@ export function GoalPrompt({ project, error, onPlan, onConnect, onManual }: Prop
         <p className="mono-note">Planning</p>
         <h2>{TOOL_LABEL[agents[0]?.tool ?? 'claude-code']} is looking through your folder</h2>
         <p>{latest?.text}</p>
+        <button type="button" className="ghost small" onClick={onCancel}>Cancel planning</button>
       </div>
     );
   }
@@ -51,6 +53,11 @@ export function GoalPrompt({ project, error, onPlan, onConnect, onManual }: Prop
         />
         <button type="submit" className="primary">{agents.length ? 'Plan this goal' : 'Connect an agent to plan this'}</button>
       </form>
+      {latest?.kind === 'plan-failed' && (
+        <p className="start-block" role="alert">
+          <strong>The plan didn’t finish.</strong> {latest.text}
+        </p>
+      )}
       {error && <p className="start-block" role="alert">{error}</p>}
       <button type="button" className="text-button" onClick={onManual}>Or add a task by hand</button>
     </div>

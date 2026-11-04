@@ -131,6 +131,7 @@ export function TaskPanel({ project, task, overlaps, onClose, onSelect, onStatus
   const expected = task.touches.filter((target) => !task.changed?.includes(target));
 
   const changeStatus = (status: TaskStatus) => {
+    if (status === 'active' && agentRun) return;
     if (status === 'active') {
       const check = checkStart(project, overlaps, task.id);
       setStartBlock(check.allowed ? null : check);
@@ -170,7 +171,8 @@ export function TaskPanel({ project, task, overlaps, onClose, onSelect, onStatus
               type="button"
               className={`status-option status-${status} ${task.status === status ? 'on' : ''}`}
               aria-pressed={task.status === status}
-              title={STATUS_LABEL[status]}
+              disabled={status === 'active' && agentRun}
+              title={status === 'active' && agentRun ? 'Only the agent can start this task. Press Start agents.' : STATUS_LABEL[status]}
               onClick={() => changeStatus(status)}
             >
               <StatusIcon status={status} size={15} />
@@ -179,6 +181,7 @@ export function TaskPanel({ project, task, overlaps, onClose, onSelect, onStatus
           <span className={`status-word status-${task.status}`}>{STATUS_LABEL[task.status]}</span>
         </div>
         )}
+        {agentRun && task.status === 'queued' && <p className="hint">Working is set by the agent once it starts this task.</p>}
 
         {startBlock && (
           <div className="start-block" role="alert">
